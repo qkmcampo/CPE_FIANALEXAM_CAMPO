@@ -1,0 +1,57 @@
+# playbook.yml
+- hosts: all
+  become: yes
+  gather_facts: yes  # Ensure facts are gathered
+  tasks:
+    - name: Install enterprise service (Nginx)
+      package:
+        name: "{{ enterprise_service }}"
+        state: present
+      when: ansible_os_family in ['Debian', 'RedHat']
+
+    - name: Start and enable Nginx
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+      when: ansible_os_family in ['Debian', 'RedHat']
+
+    - name: Install dependencies for Prometheus
+      package:
+        name: 
+          - wget
+          - tar
+      when: ansible_os_family in ['Debian', 'RedHat']
+
+    - name: Download Prometheus
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/latest/download/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp/prometheus.tar.gz
+
+    - name: Extract Prometheus
+      unarchive:
+        src: /tmp/prometheus.tar.gz
+        dest: /usr/local/bin/
+        remote_src: yes
+
+    - name: Create Prometheus configuration file
+      copy:
+        dest: /etc/prometheus/prometheus.yml
+        content: |
+          global:
+            scrape_interval: 15s
+          scrape_configs:
+            - job_name: 'nginx'
+              static_configs:
+                - targets: ['localhost:80']
+
+    - name: Start Prometheus
+      command: /usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml &
+      async: 1
+      poll: 0
+
+    - name: Change MOTD
+      lineinfile:
+        path: /etc/motd
+        line: "Ansible Managed by {{ username }}"
+        state: present
